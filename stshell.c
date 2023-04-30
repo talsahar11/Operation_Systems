@@ -1,11 +1,13 @@
-#include <sys/stat.h>
 #include <sys/wait.h>
-#include <fcntl.h>
 #include "stdio.h"
-#include "errno.h"
 #include "stdlib.h"
 #include "unistd.h"
 #include <string.h>
+
+void handle_sigint(int sig) {
+    printf("Received SIGINT, stopping tool...\ncommand: ");
+    fflush(stdout);
+}
 
 void split_args(char* command, char* args_lists[4][10], int* lists_num){
     char *token, *word ;
@@ -129,14 +131,13 @@ void handle_pipe(char* args_lists[4][10], char* ops_arr[3], int ops_num) {
 
 
 int main() {
-    int i;
-    char *argv[10];
     char command[1024];
     char *args_lists[4][10] ;
     char *ops_arr[3] ;
     int lists_num = 0, ops_num = 0 ;
+    signal(SIGINT, handle_sigint);
     while (1) {
-        printf("hello: ");
+        printf("command: ");
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0'; // replace \n with \0
         set_ops_arr(command, ops_arr, &ops_num) ;
@@ -145,6 +146,9 @@ int main() {
         if (lists_num == 0) {
             continue;
         }else if(lists_num == 1) {
+            if(strcmp(args_lists[0][0], "exit") == 0){
+                return 0 ;
+            }
             if (fork() == 0) {
                 execvp(args_lists[0][0], args_lists[0]);
                 fflush(stdout) ;
