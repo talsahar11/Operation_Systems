@@ -4,8 +4,13 @@
 #include "unistd.h"
 #include <string.h>
 
-void handle_sigint(int sig) {
+void ignore_sigint(int sig) {
     printf("Received SIGINT, stopping tool...\ncommand: ");
+    fflush(stdout);
+}
+
+void handle_sigint(int sig) {
+    kill(0, SIGTERM);  // terminate all child processes
     fflush(stdout);
 }
 
@@ -60,12 +65,12 @@ void handle_pipe(char* args_lists[4][10], char* ops_arr[3], int ops_num) {
         FILE *file = fopen(args_lists[ops_num][0], "w");
         int fd = fileno(file);
         dup2(fd, STDOUT_FILENO);
-        fclose(file);
+//        fclose(file);
     } else if (strcmp(ops_arr[ops_num-1], ">>") == 0) {
         FILE *file = fopen(args_lists[ops_num][0], "a");
         int fd = fileno(file);
         dup2(fd, STDOUT_FILENO);
-        fclose(file);
+//        fclose(file);
     }
     if (strcmp(ops_arr[0], "|") == 0) {
         int fd[2], fd2[2], pid1, pid2, pid3;
@@ -125,6 +130,8 @@ void handle_pipe(char* args_lists[4][10], char* ops_arr[3], int ops_num) {
             close(fd2[1]) ;
             waitpid(pid3, NULL, 0) ;
         }
+    } else{
+        execvp(args_lists[0][0], args_lists[0]) ;
     }
 }
 
@@ -135,33 +142,37 @@ int main() {
     char *args_lists[4][10] ;
     char *ops_arr[3] ;
     int lists_num = 0, ops_num = 0 ;
-    signal(SIGINT, handle_sigint);
+    signal(SIGINT, ignore_sigint);
     while (1) {
         printf("command: ");
         fgets(command, 1024, stdin);
         command[strlen(command) - 1] = '\0'; // replace \n with \0
         set_ops_arr(command, ops_arr, &ops_num) ;
         split_args(command, args_lists, &lists_num) ;
-        /* Is command empty */
-        if (lists_num == 0) {
-            continue;
-        }else if(lists_num == 1) {
-            if(strcmp(args_lists[0][0], "exit") == 0){
-                return 0 ;
+            /* Is command empty */
+            if (lists_num == 0) {
+                continue;
+            } else if (lists_num == 1) {
+                if (strcmp(args_lists[0][0], "exit") == 0) {
+                    kill(0, SIGTERM);  // terminate all child processes
+                }
+                if (fork() == 0) {
+                    signal(SIGINT, SIG_DFL); // set default behavior for SIGINT
+                    execvp(args_lists[0][0], args_lists[0]);
+                    fflush(stdout);
+                    exit(0) ;
+                }
+                wait(NULL);
+            } else {
+                int temp_fd;
+                dup2(STDOUT_FILENO, temp_fd);
+                if (fork() == 0) {
+                    signal(SIGINT, SIG_DFL); // set default behavior for SIGINT
+                    handle_pipe(args_lists, ops_arr, ops_num);
+                    exit(0) ;
+                }
+                wait(NULL);
+                dup2(temp_fd, STDOUT_FILENO);
             }
-            if (fork() == 0) {
-                execvp(args_lists[0][0], args_lists[0]);
-                fflush(stdout) ;
-            }
-            wait(NULL);
-        }else{
-            int temp_fd ;
-            dup2(STDOUT_FILENO, temp_fd) ;
-            if(fork() == 0) {
-                handle_pipe(args_lists, ops_arr, ops_num);
-            }
-            wait(NULL) ;
-            dup2(temp_fd, STDOUT_FILENO) ;
-        }
     }
 }
